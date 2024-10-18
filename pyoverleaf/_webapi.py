@@ -1,7 +1,11 @@
+import os
 from base64 import b64encode
 import ssl
 import urllib.parse
 import time
+
+import mechanize
+
 try:
     import http.cookiejar as cookielib
 except ImportError:
@@ -13,7 +17,8 @@ from websocket import create_connection
 import browsercookie
 import requests
 from bs4 import BeautifulSoup
-
+import os
+from dotenv import load_dotenv
 
 @dataclass
 class User:
@@ -141,10 +146,14 @@ class Api:
         :param archived: Whether to include archived projects.
         :return: A list of projects.
         """
-        self._assert_session_initialized()
-        r = self._get_session().get("http://localhost/", **self._request_kwargs)
-        r.raise_for_status()
-        content = BeautifulSoup(r.content, features="html.parser")
+
+        br = self.mechanize_browser_create()
+
+        r = br.open("http://localhost/project")
+
+        print(br.response().read())
+        content = BeautifulSoup(r, features="html.parser")
+        #content = BeautifulSoup(r.content, features="html.parser")
         data = content.find("meta", dict(name="ol-prefetchedProjectsBlob")).get("content")
         data = json.loads(data)
         projects = []
@@ -156,6 +165,32 @@ class Api:
                 continue
             projects.append(proj)
         return projects
+
+    def mechanize_browser_create(self):
+        load_dotenv()
+        cj = cookielib.CookieJar()
+        br = mechanize.Browser()
+        br.set_debug_http(True)
+        br.set_debug_redirects(True)
+        br.set_debug_responses(True)
+        br.set_handle_equiv(False)
+        br.set_handle_gzip(False)
+        br.set_handle_redirect(True)
+        br.set_handle_referer(False)
+        br.set_handle_robots(False)
+        br.set_handle_refresh(mechanize._http.HTTPRefreshProcessor(), max_time=1)
+        br.addheaders = [
+            ('User-agent', 'Mozilla/5.0 (Windows; U; Windows NT 5.1; it; rv:1.8.1.11) Gecko/20071127 Firefox/2.0.0.11'),
+            ('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'),
+            ('Accept-Charset', 'ISO-8859-1,utf-8;q=0.7,*;q=0.3'), ('Accept-Encoding', 'none'),
+            ('Accept-Language', 'en-US,en;q=0.8'), ('Connection', 'keep-alive')]
+        br.set_cookiejar(cj)
+        br.open("http://localhost/login")
+        br.select_form(nr=0)
+        br.form['email'] = os.environ['LOGIN']
+        br.form['password'] = os.environ['PASSWORD']
+        br.submit()
+        return br
 
     @overload
     def download_project(self, project_id: str) -> bytes:
@@ -325,8 +360,9 @@ class Api:
         """
         Login to Overleaf using the default browser's cookies.
         """
-        cookies = browsercookie.load()
-        self.login_from_cookies(cookies)
+        br = self.mechanize_browser_create()
+        #cookies = browsercookie.load()
+        #self.login_from_cookies(cookies)
 
     @overload
     def login_from_cookies(self, cookies: Dict[str, str]):
